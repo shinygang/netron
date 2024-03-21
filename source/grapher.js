@@ -5,7 +5,8 @@ const grapher = {};
 
 grapher.Graph = class {
 
-    constructor(compound, layout) {
+    constructor(modifier, compound, layout) {
+        this.modifier = modifier;
         this._layout = layout;
         this._isCompound = compound;
         this._nodes = new Map();
@@ -28,6 +29,16 @@ grapher.Graph = class {
                 this._children['\x00'][key] = true;
             }
         }
+
+        const modelNodeName = node.modelNodeName
+        this.modifier.name2ViewNode.set(modelNodeName, node);
+        this.modifier.name2ModelNode.set(modelNodeName, node.value);
+
+        // this.modifier.name2NodeStates save our modifications, and wil be initilized at the first graph construction only
+        // otherwise the modfications will lost
+        if (!this.modifier.name2NodeStates.get(modelNodeName)) {
+            this.modifier.name2NodeStates.set(modelNodeName, 'Exist');
+        }
     }
 
     setEdge(edge) {
@@ -41,6 +52,13 @@ grapher.Graph = class {
         if (!this._edges.has(key)) {
             this._edges.set(key, { v: edge.v, w: edge.w, label: edge });
         }
+
+        var from_node_name = edge.from.modelNodeName || edge.label
+        var to_node_name = edge.to.modelNodeName
+        if (!this.modifier.namedEdges.has(from_node_name)) {
+            this.modifier.namedEdges.set(from_node_name, []);
+        }
+        this.modifier.namedEdges.get(from_node_name).push(to_node_name);
     }
 
     setParent(node, parent) {
@@ -139,7 +157,10 @@ grapher.Graph = class {
             const entry = this.node(nodeId);
             const node = entry.label;
             if (this.children(nodeId).length === 0) {
-                node.build(document, nodeGroup);
+                if (this.modifier.name2NodeStates.get(node.modelNodeName) == 'Exist') {
+                    // console.log("build", node.label.modelNodeName)
+                    node.build(document, nodeGroup);  
+                }
             } else {
                 // cluster
                 node.rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -157,7 +178,15 @@ grapher.Graph = class {
         }
 
         for (const edge of this.edges.values()) {
-            edge.label.build(document, edgePathGroup, edgeLabelGroup);
+            var node_from = this._nodes.get(edge.v).label;
+            var node_to = this._nodes.get(edge.w).label;
+            if (
+                this.modifier.name2NodeStates.get(node_from.modelNodeName) == 'Exist' &&
+                this.modifier.name2NodeStates.get(node_to.modelNodeName) == 'Exist'
+            )
+            {
+                edge.label.build(document, edgePathGroup, edgeLabelGroup);
+            }
         }
     }
 
@@ -188,7 +217,9 @@ grapher.Graph = class {
                 // node
                 const entry = this.node(nodeId);
                 const node = entry.label;
-                node.update();
+                if (this.modifier.name2NodeStates.get(node.modelNodeName) == 'Exist') {
+                    node.update();  // 让节点显示出来
+                }
             } else {
                 // cluster
                 const entry = this.node(nodeId);
@@ -201,7 +232,15 @@ grapher.Graph = class {
             }
         }
         for (const edge of this.edges.values()) {
-            edge.label.update();
+            var node_from = this._nodes.get(edge.v).label;
+            var node_to = this._nodes.get(edge.w).label;
+            if (
+                this.modifier.name2NodeStates.get(node_from.modelNodeName) == 'Exist' &&
+                this.modifier.name2NodeStates.get(node_to.modelNodeName) == 'Exist'
+            )
+            {
+                edge.label.update();  // 让边显示出来
+            }
         }
     }
 };
@@ -455,11 +494,13 @@ grapher.Node.Header.Entry = class {
     measure() {
         const yPadding = 4;
         const xPadding = 7;
-        const boundingBox = this.text.getBBox();
-        this.width = boundingBox.width + xPadding + xPadding;
-        this.height = boundingBox.height + yPadding + yPadding;
+        if (this.text) {
+            const boundingBox = this.text.getBBox();
+            this.width = boundingBox.width + xPadding + xPadding;
+            this.height = boundingBox.height + yPadding + yPadding;
+            this.ty = yPadding - boundingBox.y;
+        }
         this.tx = xPadding;
-        this.ty = yPadding - boundingBox.y;
     }
 
     layout() {
@@ -553,11 +594,14 @@ grapher.Node.List = class {
         const xPadding = 6;
         for (let i = 0; i < this._items.length; i++) {
             const item = this._items[i];
-            const size = item.text.getBBox();
-            item.width = xPadding + size.width + xPadding;
-            item.height = yPadding + size.height + yPadding;
-            item.offset = size.y;
+            if (item.text) {
+                const size = item.text.getBBox();
+                item.width = xPadding + size.width + xPadding;
+                item.height = yPadding + size.height + yPadding;
+                item.offset = size.y;
+            }
             this.height += item.height;
+            
             if (item.type === 'node') {
                 const node = item.value;
                 node.measure();

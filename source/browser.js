@@ -214,6 +214,30 @@ host.BrowserHost = class {
         return this._environment[name];
     }
 
+    show_confirm_dialog(dialogElem) {
+        return new Promise((resolve) => {
+          let btns = dialogElem.getElementsByTagName('button');
+          let listener = [];
+          let remove_listener = () => {
+            for (const [btn, cancel_listener] of listener) {
+              btn.removeEventListener('click', cancel_listener);
+            }
+          };
+    
+          for (const btn of btns) {
+            listener.push([
+              btn,
+              btn.addEventListener('click', () => {
+                dialogElem.close();
+                remove_listener();
+                resolve(btn.dataset.value);
+              }),
+            ]);
+          }
+          dialogElem.showModal();
+        });
+    }
+
     async error(message, detail /*, cancel */) {
         alert((message === 'Error' ? '' : `${message} `) + detail);
         return 0;

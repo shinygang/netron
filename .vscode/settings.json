@@ -12,5 +12,6 @@
     "pylint.severity": {
         "convention": "Warning",
         "refactor": "Warning"
-    }
+    },
+    "liveServer.settings.port": 5501
 }

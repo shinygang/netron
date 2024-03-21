@@ -228,6 +228,14 @@ onnx.Graph = class {
         this._name = graph.name || null;
         this._description = graph.doc_string || '';
         context = new onnx.Context.Graph(context, graph);
+
+        this._context = context;
+        this._custom_add_node_io_idx = 0
+        this._custom_added_node = []
+        this._custom_added_outputs = []
+        this._custom_deleted_outputs = []
+        this._custom_added_inputs = []
+
         if (Array.isArray(graph.quantization_annotation)) {
             for (const tensor_annotation of graph.quantization_annotation) {
                 const tensor = context.tensor(tensor_annotation.tensor_name);
@@ -295,6 +303,187 @@ onnx.Graph = class {
 
     toString() {
         return `graph(${this.name})`;
+    }
+
+    reset_custom_added_node() {
+        this._custom_added_node = []
+        // this._custom_add_node_io_idx = 0
+    }
+
+    make_custom_added_node(node_info) {
+        // type of node_info == LightNodeInfo
+        const schema = this._context.metadata.type(node_info.properties.get('op_type'), node_info.properties.get('domain'));
+        // console.log(schema)
+        
+        // console.log(node_info.attributes)
+        // console.log(node_info.inputs)
+        // console.log(node_info.outputs)
+        // var max_input = schema.max_input
+        // var min_input = schema.max_input
+        var max_custom_add_input_num = Math.min(schema.max_input, 8)  // set at most 8 custom_add inputs
+        var max_custom_add_output_num = Math.min(schema.max_output, 8)  // set at most 8 custom_add outputs
+        
+        // console.log(node_info)
+        var inputs = []
+        // use "if" to deal with node type with no input, like Constant
+        if (schema.inputs) {
+            for (let i = 0; i < schema.inputs.length; ++i) {
+                const input = schema.inputs[i]
+                
+                var node_info_input = node_info.inputs.get(input.name)
+                // console.log(node_info_input)
+    
+                var arg_list = []
+                if (input.list) {
+                    for (let j = 0; j < max_custom_add_input_num; ++j) {
+                        if (node_info_input && node_info_input[j]) {
+                            var arg_name = node_info_input[j][0]  // [arg.name, arg.is_optional]
+                        }
+                        else {
+                            var arg_name = 'list_custom_input_' + (this._custom_add_node_io_idx++).toString()
+                        }
+                        arg_list.push(this._context.value(arg_name))
+                    }
+                }
+                else {
+                    if (node_info_input && node_info_input[0]) {
+                        var arg_name = node_info_input[0][0]  // [arg.name, arg.is_optional]
+                    }
+                    else {
+                        var arg_name = 'custom_input_' + (this._custom_add_node_io_idx++).toString()
+                    }
+                    arg_list = [this._context.value(arg_name)]
+                }
+    
+                for (var arg of arg_list) {
+                    arg.is_custom_added = true;
+                    if (input.option && input.option == 'optional') {
+                        arg.is_optional = true;
+                    }
+                }
+                inputs.push(new onnx.Argument(input.name, arg_list));
+            }
+        }
+
+        var outputs = []
+        if (schema.outputs) {
+            for (let i = 0; i < schema.outputs.length; ++i) {
+                const output = schema.outputs[i]
+                var node_info_output = node_info.outputs.get(output.name)
+    
+                var arg_list = []
+                if (output.list) {
+                    for (let j = 0; j < max_custom_add_output_num; ++j) {
+                        if (node_info_output && node_info_output[j]) {
+                            var arg_name = node_info_output[j][0]
+                        }
+                        else {
+                            var arg_name = 'list_custom_output_' + (this._custom_add_node_io_idx++).toString()
+                        }
+                        arg_list.push(this._context.value(arg_name))
+                    }
+                }
+                else {
+                    if (node_info_output && node_info_output[0]) {
+                        var arg_name = node_info_output[0][0]
+                    }
+                    else {
+                        var arg_name = 'custom_output_' + (this._custom_add_node_io_idx++).toString()
+                    }
+                    
+                    arg_list = [this._context.value(arg_name)]
+                }
+    
+                for (var arg of arg_list) {
+                    arg.is_custom_added = true;
+                    if (output.option && output.option == 'optional') {
+                        arg.is_optional = true;
+                    }
+                }
+                outputs.push(new onnx.Argument(output.name, arg_list));
+            }
+        }
+
+        // console.log(inputs)
+        // console.log(outputs)
+        
+        // console.log(node_info)
+        var attributes = []
+        if (schema.attributes) {
+            for (const attr of schema.attributes) {
+                // [value, type]
+                // console.log(node_info.attributes)
+                var value = null;
+                if (node_info.attributes.has(attr.name)) {
+                    value = node_info.attributes.get(attr.name)[0];
+                }
+                attributes.push(
+                    new onnx.LightAttributeInfo(
+                        attr.name, 
+                        attr.description,
+                        attr.type,
+                        value
+                        )
+                    )
+            }
+        }
+        // console.log(attributes)
+        var custom_add_node = new onnx.Node(
+                this._context, 
+                node_info.properties.get('op_type'), 
+                node_info.properties.get('domain'), 
+                node_info.properties.get('name'), 
+                null, // schema.description, // omit it to save sidebar space. The node description can also be seen in the node `type` expander 
+                attributes, 
+                inputs, 
+                outputs
+            );
+        // console.log(custom_add_node)
+
+        this._custom_added_node.push(custom_add_node)
+
+        return custom_add_node;
+    }
+
+    reset_custom_modified_outputs() {
+        this._custom_added_outputs = [];
+        this._custom_deleted_outputs = [];
+    }
+
+    reset_custom_modified_inputs() {
+        this._custom_added_inputs = [];
+    }
+
+    add_output(name) {
+        const argument = this._context.value(name);
+        this._custom_added_outputs.push(new onnx.Argument(name, [ argument ]));
+    }
+
+    add_input(name_shape_type) {
+        // [name, type[shape]]
+        var name = name_shape_type[0];
+        var shape_type = name_shape_type[1];
+        // valid shape format: dtype[shape], like float32[1,3,224,224]
+        var dtype = shape_type.split("[")[0];
+        var shape_str = shape_type.split("[")[1].split("]")[0];
+        
+        var shape = [];
+        for (const dim of shape_str.split(",")) {
+            shape.push(parseInt(dim));
+        }
+        // console.log(dtype, shape);
+
+        const tensor = this._context.tensor(name);
+        tensor.type = new onnx.TensorType(dtype, new onnx.TensorShape(shape));
+
+        const argument = this._context.value(name);
+        const value = new onnx.Argument(name, [ argument ]);
+        return value;
+        // this._custom_added_inputs.push(new onnx.Argument(name, [ argument ]));
+    }
+
+    delete_output(name) {
+        this._custom_deleted_outputs.push(name);
     }
 };
 
@@ -458,6 +647,37 @@ onnx.Node = class {
                 this.chain.push(node);
             }
         }
+    }
+
+    addInput(input) {
+        this.inputs.push(input);
+    }
+
+    deleteInput(name) {
+        console.log('name:', name)
+        this.inputs = this.inputs.filter(input => input.name !== name);
+    }
+
+    addAttribute(name, type, value) {
+        if (this.attributes.findIndex((attribute) => attribute.name === name) < 0) {
+            let attr = null;
+            if (type === 'int64' || type === 'float32') {
+                attr = new onnx.Argument(name, BigInt(value), type, '', true)
+            } else if (type === 'int64[]' || type === 'float32[]') {
+                const values = value.split(',').map(cur => BigInt(cur));
+                attr = new onnx.Argument(name, values, type, '', true)
+            } else {
+                attr = new onnx.Argument(name, value, type, '', true)
+            }
+            this.attributes.push(attr)
+        } else {
+            alert('属性名称已经存在')
+        }
+    }
+
+    deleteAttribute(name) {
+        this.attributes = this.attributes.filter(attr => attr.name !== name);
+        // this.attributes.splice(index, 1);
     }
 };
 
