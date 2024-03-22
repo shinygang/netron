@@ -175,9 +175,17 @@ onnx.Model = class {
             }
             imageFormat = [imageMetadata['Image.BitmapPixelFormat'], imageMetadata['Image.ColorSpaceGamma'], imageMetadata['Image.NominalPixelRange']].filter((item) => item);
         }
-        const context = new onnx.Context.Model(metadata, locations, imageFormat, imports, model.functions);
+
+        this.graphMetadata = new onnx.GraphMetadata(metadata, imports);
+
+        const context = new onnx.Context.Model(this.graphMetadata, locations, imageFormat, imports, model.functions);
         const graph = new onnx.Graph(context, model.graph);
         this._graphs = [graph];
+    }
+
+    get metadata() {
+        console.log('this._context:', this._context)
+        return this._context.metadata;
     }
 
     get format() {
@@ -214,6 +222,16 @@ onnx.Model = class {
 
     get graphs() {
         return this._graphs;
+    }
+
+    get supported_nodes() {
+        var nodes = []
+        for (const domain of this.graphMetadata._metadata._types.keys()) {
+            for (const op of this.graphMetadata._metadata._types.get(domain).keys()) {
+                nodes.push([domain, op])
+            }
+        }
+        return nodes
     }
 };
 
@@ -298,7 +316,7 @@ onnx.Graph = class {
     }
 
     get nodes() {
-        return this._nodes;
+        return this._nodes.concat(this._custom_added_node);
     }
 
     toString() {
@@ -313,8 +331,6 @@ onnx.Graph = class {
     make_custom_added_node(node_info) {
         // type of node_info == LightNodeInfo
         const schema = this._context.metadata.type(node_info.properties.get('op_type'), node_info.properties.get('domain'));
-        // console.log(schema)
-        
         // console.log(node_info.attributes)
         // console.log(node_info.inputs)
         // console.log(node_info.outputs)
@@ -404,7 +420,6 @@ onnx.Graph = class {
             }
         }
 
-        // console.log(inputs)
         // console.log(outputs)
         
         // console.log(node_info)
@@ -430,11 +445,13 @@ onnx.Graph = class {
         // console.log(attributes)
         var custom_add_node = new onnx.Node(
                 this._context, 
-                node_info.properties.get('op_type'), 
-                node_info.properties.get('domain'), 
-                node_info.properties.get('name'), 
-                null, // schema.description, // omit it to save sidebar space. The node description can also be seen in the node `type` expander 
-                attributes, 
+                {
+                    op_type: node_info.properties.get('op_type'),
+                    domain: node_info.properties.get('domain'),
+                    name: node_info.properties.get('name'),
+                    attributes,
+                    description: ''
+                },
                 inputs, 
                 outputs
             );
@@ -495,12 +512,13 @@ onnx.Argument = class {
         this.type = type || null;
         this.description = description || null;
         this.visible = visible === false ? false : true;
+        
     }
 };
 
 onnx.Value = class {
 
-    constructor(name, type, initializer, annotation, description) {
+    constructor(name, type, initializer, annotation, description, original_name) {
         if (typeof name !== 'string') {
             throw new onnx.Error(`Invalid value identifier '${JSON.stringify(name)}'.`);
         }
@@ -509,6 +527,10 @@ onnx.Value = class {
         this._initializer = initializer || null;
         this._description = description || '';
         this._quantization = annotation ? { type: 'annotation', value: annotation } : null;
+
+        this.original_name = original_name || name;
+        this.is_custom_added = false;
+        this.is_optional = false;
     }
 
     get name() {
@@ -680,6 +702,17 @@ onnx.Node = class {
         // this.attributes.splice(index, 1);
     }
 };
+
+onnx.LightAttributeInfo = class {
+    constructor(name, description, type, value) {
+        this.name = name;
+        this.description = description;
+        this.type = type;
+        // this.value = value || null;
+        // console.log(value, value || null) // TODO: amazing output: 0, null
+        this.value = value
+    }
+}
 
 onnx.Group = class {
 
@@ -1137,6 +1170,11 @@ onnx.Context.Model = class {
         }
     }
 
+    get metadata() {
+        console.log('yyyy:', this._metadata, this._graphMetadata)
+        return this._metadata;
+    }
+
     get imageFormat()  {
         return this._imageFormat;
     }
@@ -1195,6 +1233,62 @@ onnx.Context.Model = class {
                     const key = `${domain}:${type}:${attribute.name}`;
                     this._attributes.set(key, attribute);
                 }
+            }
+        }
+        return this._attributes.get(key);
+    }
+};
+
+onnx.GraphMetadata = class {
+
+    constructor(metadata, imports) {
+        this._metadata = metadata;
+        this._imports = imports;
+        this._cache = new Map();
+        this._attributes = new Map();
+        this._functions = new Map();
+    }
+
+    add(func) {
+        if (!this._functions.has(func.module)) {
+            this._functions.set(func.module, new Map());
+        }
+        const map = this._functions.get(func.module);
+        if (map.has(func.name)) {
+            throw new onnx.Error("Duplicate function identifier '" + func.module + '.' + func.name + "'.");
+        }
+        map.set(func.name, func);
+    }
+
+    type(name, domain) {
+        domain = domain || 'ai.onnx';
+        const key = domain + ':' + name;
+        if (!this._cache.has(key)) {
+            let value = this._metadata.type(name, domain, this._imports);
+            if (!value) {
+                if (this._functions.has(domain)) {
+                    const map = this._functions.get(domain);
+                    if (map.has(name)) {
+                        value = map.get(name);
+                    }
+                }
+            }
+            this._cache.set(key, value);
+        }
+        return this._cache.get(key);
+    }
+
+    attribute(type, domain, name) {
+        const key = domain + ':' + type + ':' + name;
+        if (!this._attributes.has(key)) {
+            const schema = this.type(type, domain);
+            if (schema && schema.attributes && schema.attributes.length > 0) {
+                for (const attribute of schema.attributes) {
+                    this._attributes.set(key, attribute);
+                }
+            }
+            if (!this._attributes.has(key)) {
+                this._attributes.set(key, null);
             }
         }
         return this._attributes.get(key);
@@ -1402,6 +1496,11 @@ onnx.Context.Graph = class {
         }
     }
 
+    get metadata() {
+        console.log('onnx.Context.Graph:', this._context)
+        return this._context.metadata;
+    }
+
     type(name, domain) {
         return this._context.type(name, domain);
     }
@@ -1447,11 +1546,11 @@ onnx.Context.Graph = class {
         return this._groups.get(name);
     }
 
-    value(name) {
+    value(name, original_name) {
         if (!this._values.has(name)) {
             const tensor = this.tensor(name);
             const type = tensor.initializer ? tensor.initializer.type : tensor.type || null;
-            this._values.set(name, new onnx.Value(name, type, tensor.initializer, tensor.annotation, tensor.description));
+            this._values.set(name, new onnx.Value(name, type, tensor.initializer, tensor.annotation, tensor.description, original_name));
         }
         return this._values.get(name);
     }

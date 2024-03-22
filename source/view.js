@@ -351,6 +351,10 @@ view.View = class {
         }
     }
 
+    _newLightNode(properties) {
+        return new view.LightNodeInfo(properties);
+    }
+
     _timeout(delay) {
         return new Promise((resolve) => {
             setTimeout(resolve, delay);
@@ -742,7 +746,9 @@ view.View = class {
                     element.addEventListener('click', () => {
                         if (i > 0) {
                             this._stack = this._stack.slice(i);
-                            this._updateGraph(this._model, this._stack);
+                            if (this._stack && this._model) {
+                                this._updateGraph(this._model, this._stack);
+                            }
                         }
                         this.showDefinition(this._stack[0]);
                     });
@@ -2129,6 +2135,15 @@ view.Output = class extends grapher.Node {
     }
 };
 
+view.LightNodeInfo = class {
+    constructor(properties, attributes, inputs, outputs) {
+        this.properties = properties
+        this.attributes = attributes || new Map()
+        this.inputs = inputs || new Map()
+        this.outputs = outputs || new Map()
+    }
+};
+
 view.Value = class {
 
     constructor(context, argument) {
@@ -2456,7 +2471,7 @@ view.NodeSidebar = class extends view.ObjectSidebar {
         const inputs = node.inputs;
         const element = this.createElement('div', 'header-multiple');
         element.appendChild(this.addHeader('Inputs', false));
-        const addButton = this._addOperationButton('Add Input', false, inputs[0].value[0].type.toString())
+        const addButton = this._addOperationButton('Add Input', false)
         element.appendChild(addButton);
         this._container.appendChild(element);
         if (Array.isArray(inputs) && inputs.length > 0) {
@@ -2464,7 +2479,7 @@ view.NodeSidebar = class extends view.ObjectSidebar {
                 this._addInput(input.name, input, index);
             }
         }
-        
+
         const outputs = node.outputs;
         const output_element = this.createElement('div', 'header-multiple');
         output_element.appendChild(this.addHeader('Outputs', false));
@@ -2568,7 +2583,6 @@ view.NodeSidebar = class extends view.ObjectSidebar {
                     let attrDialog = document.getElementById('addattribute-dialog');
                     attrDialog.getElementsByClassName('message')[0].innerText = `Add a attribute of Node ${this._modelNodeName} :`;
                     this._host.show_confirm_dialog(attrDialog).then((is_not_cancel) => {
-                        console.log('input_type:', input_type.value)
                         if (!is_not_cancel) {
                             input_name.value = '';
                             input_value.value = '';
@@ -2796,6 +2810,9 @@ view.AttributeView = class extends view.Control {
                 line.addEventListener('input', (e) => {
                     this._host._view.modifier.changeNodeAttribute(this._modelNodeName, this._attribute.name, e.target.value, type);
                 });
+                line.addEventListener('keydown', (e) => {
+                    e.stopPropagation();
+                })
                 this._element.appendChild(line);
 
                 var delButton = document.createElement("span");
@@ -2923,6 +2940,9 @@ view.ValueView = class extends view.Control {
             nameLine.addEventListener('input', (e) => {
                 this._host._view.modifier.changeNodeInputOutput(this._modelNodeName, this._parameterName, this._param_type, this._param_index, this._arg_index, e.target.value);
             });
+            nameLine.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+            })
 
             // const nameLine = this.createElement('div', 'sidebar-item-value-line');
             // if (typeof name !== 'string') {
@@ -3206,6 +3226,9 @@ view.ValueView = class extends view.Control {
              input.addEventListener('input', (e) => {
                  this._host._view.modifier.changeNodeInputOutputType(this._modelNodeName, this._param_type, this._param_index, this._arg_index, e.target.value);
              });
+             input.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+            })
              const nameSpan = document.createElement("span");
              nameSpan.innerHTML = name + ": ";
              line.appendChild(nameSpan);

@@ -208,6 +208,23 @@ host.BrowserHost = class {
             }
         });
         this._view.show('welcome');
+
+        const addNodeButton = this.document.getElementById('add-node-button');
+        addNodeButton.addEventListener('click', () => {
+
+            let dialog = document.getElementById('addnode-dialog');
+            this.show_confirm_dialog(dialog).then((is_not_cancel) => {
+                if (!is_not_cancel) return;
+                var addNodeDropDown = this.document.getElementById('add-node-dropdown');
+                var selected_val = addNodeDropDown.options[addNodeDropDown.selectedIndex].value
+                var op_domain = selected_val.split(':')[0]
+                var op_type = selected_val.split(':')[1]
+
+                this._view.modifier.addNode(op_domain, op_type);
+                // this._view._updateGraph();
+            })
+            
+        })
     }
 
     environment(name) {

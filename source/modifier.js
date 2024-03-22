@@ -22,19 +22,20 @@ modifier.Modifier = class {
     this.renameMap = new Map();
     this.renameTypeMap = new Map();
     this.reBatchInfo = new Map();
+    // 记录操作步骤
+    this.operatingSteps = new Set();
 
     this.downloadWithShapeInf = false;
     this.downloadWithCleanUp = false;
   }
 
   loadModelGraph(model, stack) {
-    console.log('stack:', stack)
     this.model = model;
     this.stack = stack;
     this.graph = stack[0].graph;
     // this.analyzeModelGraph();
 
-    // this.updateAddNodeDropDown();
+    this.updateAddNodeDropDown();
   }
 
   // TODO: add filter feature like here: https://www.w3schools.com/howto/howto_js_dropdown.asp
@@ -80,6 +81,11 @@ modifier.Modifier = class {
     properties.set("name", modelNodeName);
     this.addedNode.set(modelNodeName, this.view._newLightNode(properties));
 
+    this.operatingSteps.add({
+      type: 'addNode',
+      modelNodeName: modelNodeName,
+    })
+
     this.applyAndUpdateView();
   }
 
@@ -92,14 +98,34 @@ modifier.Modifier = class {
     } else {
       this.addedOutputs.add(output_name);
     }
+
+    this.operatingSteps.add({
+      type: 'addOutput',
+      modelNodeName: modelNode,
+      value: {
+        output_name
+      }
+    })
+
     this.applyAndUpdateView();
   }
 
   addModelInput(modelNodeName, input_name, input_shape_type) {
     const inputItem = this.graph.add_input([input_name, input_shape_type]);
     this.addedInputs.set(modelNodeName, inputItem);
+
+    this.operatingSteps.add({
+      type: 'addInput',
+      modelNodeName,
+      value: {
+        input_name
+      }
+    })
+
     this.applyAndUpdateView();
     this.addedInputs = new Map();
+
+    
   }
 
   deleteInput(modelNodeName, input_name) {
@@ -107,22 +133,52 @@ modifier.Modifier = class {
       this.deleteInput.set(modelNodeName, new Map());
     }
     this.deleteInput.get(modelNodeName).set(input_name, true);
+
+    this.operatingSteps.add({
+      type: 'deleteInput',
+      modelNodeName,
+      value: {
+        input_name
+      }
+    })
+
     // this.view._updateGraph()
     this.applyAndUpdateView();
   }
 
   deleteModelOutput(output_name) {
     this.name2NodeStates.set(output_name, "Deleted"); // "out_" + xxx
+    this.operatingSteps.add({
+      type: 'deleteOutput',
+      value: {
+        output_name
+      }
+    })
+
     this.applyAndUpdateView();
   }
 
   deleteSingleNode(node_name) {
     this.name2NodeStates.set(node_name, "Deleted");
     this.name2ViewNode.get(node_name).element.style.opacity = 0.3;
+
+    this.operatingSteps.add({
+      type: 'deleteNode',
+      value: {
+        node_name
+      }
+    })
   }
 
   deleteNodeWithChildren(node_name) {
     if (this.name2NodeStates.get(node_name) == "Deleted") return;
+
+    this.operatingSteps.add({
+      type: 'deleteNode',
+      value: {
+        node_name
+      }
+    })
 
     this.name2NodeStates.set(node_name, "Deleted");
     this.name2ViewNode.get(node_name).element.style.opacity = 0.3;
@@ -214,7 +270,18 @@ modifier.Modifier = class {
         this.renameMap.set(modelNodeName, new Map());
       }
       this.renameMap.get(modelNodeName).set(orig_arg_name, targetValue);
+
+      this.operatingSteps.add({
+        type: 'changeNodeInputOutput',
+        modelNodeName,
+        value: {
+          input_name: param_type === 'input' ? orig_arg_name : '',
+          output_name: param_type === 'output' ? orig_arg_name : '',
+        }
+      })
     }
+
+    
     // this.view._updateGraph()
 
     this.applyAndUpdateView();
@@ -283,13 +350,11 @@ modifier.Modifier = class {
       this.addedNode.get(modelNodeName).attributes.set(attributeName, [targetValue, type]);
     }
     // console.log(this._addedNode)
-    else {
       // for the nodes in the original model
-      if (!this.changedAttributes.get(modelNodeName)) {
-        this.changedAttributes.set(modelNodeName, new Map());
-      }
-      this.changedAttributes.get(modelNodeName).set(attributeName, [targetValue, type]);
+    if (!this.changedAttributes.get(modelNodeName)) {
+      this.changedAttributes.set(modelNodeName, new Map());
     }
+    this.changedAttributes.get(modelNodeName).set(attributeName, [targetValue, type]);
 
     // this.view._updateGraph()
     this.applyAndUpdateView();
@@ -307,12 +372,11 @@ modifier.Modifier = class {
   addNodeAttribute(modelNodeName, attributeName, type, targetValue) {
     if (this.addedNode.has(modelNodeName)) {
         this.addedNode.get(modelNodeName).attributes.set(attributeName, [targetValue, type]);
-    } else {
-        if (!this.addAttributes.get(modelNodeName)) {
-            this.addAttributes.set(modelNodeName, new Map());
-        }
-        this.addAttributes.get(modelNodeName).set(attributeName, [targetValue, type]);
     }
+    if (!this.addAttributes.get(modelNodeName)) {
+      this.addAttributes.set(modelNodeName, new Map());
+    }
+    this.addAttributes.get(modelNodeName).set(attributeName, [targetValue, type]);
     this.applyAndUpdateView();
   }
 
@@ -357,7 +421,7 @@ modifier.Modifier = class {
     }
     for (var input of this.graph.inputs) {
       var input_orig_name = input.value[0].original_name;
-      // console.log(input_orig_name)
+      console.log(input_orig_name)
       if (this.renameMap.get(input_orig_name)) {
         var new_name = this.renameMap.get(input_orig_name).get(input_orig_name);
         var arg_with_new_name = this.graph._context.value(new_name, input_orig_name);
@@ -442,13 +506,11 @@ modifier.Modifier = class {
     // for (const node_info of this.addedNode.values()) {
     // for (const [modelNodeName, node_info] of this.lastViewGraph.addedNode) {
     for (const [modelNodeName, node_info] of this.addedNode) {
-      // console.log(node_info)
       var node = this.graph.make_custom_added_node(node_info);
-      // console.log(node)
 
       for (const input of node.inputs) {
         var arg_list_info = [];
-        for (const arg of input._arguments) {
+        for (const arg of input.value) {
           arg_list_info.push([arg.name, arg.is_optional]);
         }
         this.addedNode.get(modelNodeName).inputs.set(input.name, arg_list_info);
@@ -456,7 +518,7 @@ modifier.Modifier = class {
 
       for (const output of node.outputs) {
         var arg_list_info = [];
-        for (const arg of output._arguments) {
+        for (const arg of output.value) {
           arg_list_info.push([arg.name, arg.is_optional]);
         }
         this.addedNode.get(modelNodeName).outputs.set(output.name, arg_list_info);
@@ -495,7 +557,7 @@ modifier.Modifier = class {
         }
       }
     }
-    for (var node of this.graph._nodes) {
+    for (var node of this.graph.nodes) {
       // if (this.modifier.renameMap.get(node.modelNodeName)) {
       if (this.renameMap.get(node.modelNodeName)) {
         // check inputs
