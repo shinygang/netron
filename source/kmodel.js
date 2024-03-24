@@ -244,7 +244,7 @@ kmodel.Reader = class {
                 return new kmodel.Reader(stream, 3);
             }
             if ([0x4C, 0x44, 0x4D, 0x4B].every((value, index) => value === buffer[index]) && buffer.length >= 8) {
-                const reader = new base.BinaryReader(buffer);
+                const reader = base.BinaryReader.open(buffer);
                 reader.skip(4);
                 const version = reader.uint32();
                 return new kmodel.Reader(stream, version);
@@ -269,7 +269,7 @@ kmodel.Reader = class {
         };
         switch (this.version) {
             case 3: {
-                const reader = new kmodel.BinaryReader.v3(this.stream);
+                const reader = new kmodel.BufferReader.v3(this.stream);
                 const model_header = reader.kpu_model_header_t();
                 const layers = new Array(model_header.layers_length);
                 const outputs = new Array(model_header.output_count);
@@ -546,7 +546,7 @@ kmodel.Reader = class {
                 break;
             }
             case 4: {
-                const reader = new kmodel.BinaryReader.v4(this.stream);
+                const reader = new kmodel.BufferReader.v4(this.stream);
                 const model_header = {
                     flags: reader.uint32(),
                     target: reader.uint32(), // 0=CPU, 1=K210
@@ -913,7 +913,7 @@ kmodel.Reader = class {
                 break;
             }
             case 5: {
-                const reader = new kmodel.BinaryReader.v5(this.stream);
+                const reader = new kmodel.BufferReader.v5(this.stream);
                 const model_header = reader.model_header();
                 if (model_header.header_size < 32) {
                     throw new kmodel.Error(`Invalid header size '${model_header.header_size}'.`);
@@ -960,7 +960,7 @@ kmodel.Reader = class {
                         for (let i = 0; i < outputs.length; i++) {
                             outputs[i].value[0].shape = reader.shape();
                         }
-                        reader.align_position(8);
+                        reader.align(8);
                         const size = reader.size - position;
                         if (function_header.size > size) {
                             reader.skip(function_header.size - size);
@@ -978,10 +978,10 @@ kmodel.Reader = class {
                         reader.skip(section_header.body_start);
                         const body = reader.read(section_header.body_size);
                         const section = {
-                            reader: new base.BinaryReader(body),
+                            reader: base.BinaryReader.open(body),
                             flags: section_header.flags
                         };
-                        reader.align_position(8);
+                        reader.align(8);
                         sections.set(section_header.name, section);
                     }
                     for (let i = 0; i < function_headers.length; i++) {
@@ -1019,7 +1019,7 @@ kmodel.Reader = class {
     }
 };
 
-kmodel.BinaryReader = class extends base.BinaryReader {
+kmodel.BufferReader = class extends base.BufferReader {
 
     uint64_bits(fields) {
         const buffer = this.read(8);
@@ -1046,7 +1046,7 @@ kmodel.BinaryReader = class extends base.BinaryReader {
     }
 };
 
-kmodel.BinaryReader.v3 = class extends kmodel.BinaryReader {
+kmodel.BufferReader.v3 = class extends kmodel.BufferReader {
 
     constructor(buffer) {
         super(buffer);
@@ -1089,7 +1089,7 @@ kmodel.BinaryReader.v3 = class extends kmodel.BinaryReader {
     }
 };
 
-kmodel.BinaryReader.v4 = class extends kmodel.BinaryReader {
+kmodel.BufferReader.v4 = class extends kmodel.BufferReader {
 
     constructor(buffer) {
         super(buffer);
@@ -1210,7 +1210,7 @@ kmodel.BinaryReader.v4 = class extends kmodel.BinaryReader {
     }
 };
 
-kmodel.BinaryReader.v5 = class extends kmodel.BinaryReader {
+kmodel.BufferReader.v5 = class extends kmodel.BufferReader {
 
     constructor(buffer) {
         super(buffer);
@@ -1337,13 +1337,6 @@ kmodel.BinaryReader.v5 = class extends kmodel.BinaryReader {
             array[i] = this.uint32();
         }
         return array;
-    }
-
-    align_position(alignment) {
-        const remainder = this._position % alignment;
-        if (remainder !== 0) {
-            this.skip(alignment - remainder);
-        }
     }
 };
 

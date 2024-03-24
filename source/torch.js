@@ -464,7 +464,7 @@ torch.T7Reader = class {
     static open(context) {
         const stream = context.stream;
         if (stream && stream.length >= 4 && stream.peek(4).every((value, index) => value === 0x00 || (index === 0 && value <= 0x08))) {
-            const reader = new torch.BinaryReader(stream);
+            const reader = new torch.BufferReader(stream);
             return new torch.T7Reader(reader);
         }
         if (stream && stream.length >= 2) {
@@ -971,7 +971,7 @@ torch.T7Reader = class {
     }
 };
 
-torch.BinaryReader = class extends base.BinaryReader {
+torch.BufferReader = class extends base.BufferReader {
 
     constructor(data) {
         super(data instanceof Uint8Array ? data : data.peek(), true);
@@ -1008,7 +1008,7 @@ torch.BinaryReader = class extends base.BinaryReader {
 
     storage(size, itemSize) {
         const buffer = this.read(size * itemSize);
-        return new torch.BinaryReader(buffer);
+        return new torch.BufferReader(buffer);
     }
 };
 
@@ -1131,7 +1131,7 @@ torch.TextReader = class {
             this._position += size;
             const bytes = this._buffer.slice(start, this._position);
             this.line(0);
-            return new torch.BinaryReader(bytes);
+            return new torch.BufferReader(bytes);
         }
         const data = this.line(Number.MAX_SAFE_INTEGER);
         return new torch.TextReader(data, 0x20);

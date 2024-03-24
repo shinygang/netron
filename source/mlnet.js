@@ -480,7 +480,7 @@ mlnet.ModelHeader = class {
         this._directory = directory;
 
         if (data) {
-            const reader = new mlnet.BinaryReader(data);
+            const reader = new mlnet.BufferReader(data);
 
             const decoder = new TextDecoder('ascii');
             reader.assert('ML\0MODEL');
@@ -568,7 +568,7 @@ mlnet.ModelHeader = class {
         name = dir + name;
         const stream = this._entries.get(name) || this._entries.get(name.replace(/\//g, '\\'));
         if (stream) {
-            return new mlnet.BinaryReader(stream);
+            return new mlnet.BufferReader(stream);
         }
         return null;
     }
@@ -590,7 +590,7 @@ mlnet.ModelHeader = class {
     }
 };
 
-mlnet.BinaryReader = class extends base.BinaryReader {
+mlnet.BufferReader = class extends base.BufferReader {
 
     match(text) {
         const position = this.position;
@@ -2138,7 +2138,7 @@ mlnet.Codec = class {
         this.name = reader.string();
         const size = reader.leb128();
         const data = reader.read(size);
-        reader = new mlnet.BinaryReader(data);
+        reader = new mlnet.BufferReader(data);
         switch (this.name) {
             case 'Boolean': break;
             case 'Single': break;
