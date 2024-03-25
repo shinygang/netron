@@ -229,7 +229,7 @@ tf.ModelFactory = class {
                 stream.seek(-8);
                 const buffer = stream.read(8);
                 stream.seek(0);
-                const reader = new base.BinaryReader(buffer);
+                const reader = base.BinaryReader.open(buffer);
                 const offset = reader.uint64().toNumber();
                 if (offset < stream.length) {
                     context.type = 'tf.pb.mmap';
@@ -450,7 +450,7 @@ tf.ModelFactory = class {
                                 case 'string': {
                                     const data = [];
                                     if (buffer && size > 0) {
-                                        const reader = new tf.BinaryReader(buffer.subarray(offset));
+                                        const reader = new tf.BufferReader(buffer.subarray(offset));
                                         for (let i = 0; i < size; i++) {
                                             data[i] = reader.string();
                                         }
@@ -611,7 +611,7 @@ tf.ModelFactory = class {
             const readDirectoryOffset = (stream) => {
                 stream.seek(-8);
                 const buffer = stream.read(8);
-                const reader = new base.BinaryReader(buffer);
+                const reader = base.BinaryReader.open(buffer);
                 return reader.uint64().toNumber();
             };
             const readDirectory = (stream, offset) => {
@@ -1402,7 +1402,7 @@ tf.TensorBundle.Table = class {
         }
         stream.seek(-48);
         const buffer = stream.peek(48);
-        const reader = new tf.BinaryReader(buffer);
+        const reader = new tf.BufferReader(buffer);
         reader.seek(-8);
         const signature = [0x57, 0xfb, 0x80, 0x8b, 0x24, 0x75, 0x47, 0xdb];
         if (!reader.read(8).every((value, index) => value === signature[index])) {
@@ -1415,7 +1415,7 @@ tf.TensorBundle.Table = class {
         const indexSize = reader.varint64();
         const indexBlock = new tf.TensorBundle.Table.Block(stream, indexOffset, indexSize);
         for (const [, value] of indexBlock.entries) {
-            const valueReader = new tf.BinaryReader(value);
+            const valueReader = new tf.BufferReader(value);
             const offset = valueReader.varint64();
             const size = valueReader.varint64();
             const block = new tf.TensorBundle.Table.Block(stream, offset, size);
@@ -1436,12 +1436,12 @@ tf.TensorBundle.Table.Block = class {
         const buffer = stream.read(size); // blockContents
         const compression = stream.byte();
         stream.skip(4); // crc32
-        let reader = new tf.BinaryReader(buffer);
+        let reader = new tf.BufferReader(buffer);
         switch (compression) {
             case 0: // kNoCompression
                 break;
             case 1: // kSnappyCompression
-                reader = new tf.BinaryReader(reader.unsnappy());
+                reader = new tf.BufferReader(reader.unsnappy());
                 break;
             default:
                 throw new tf.Error(`Unsupported block compression '${compression}'.`);
@@ -1473,7 +1473,7 @@ tf.TensorBundle.Table.Block = class {
     }
 };
 
-tf.BinaryReader = class extends base.BinaryReader {
+tf.BufferReader = class extends base.BufferReader {
 
     constructor(buffer) {
         super(buffer);
@@ -1578,7 +1578,7 @@ tf.EventFileReader = class {
             return crc;
         };
         const buffer = stream.peek(12);
-        const reader = new tf.BinaryReader(buffer);
+        const reader = new tf.BufferReader(buffer);
         const length_bytes = reader.read(8);
         const length_crc = reader.uint32();
         if (masked_crc32c(length_bytes) !== length_crc) {
@@ -1596,7 +1596,8 @@ tf.EventFileReader = class {
             const uint64 = (stream) => {
                 const buffer = stream.read(8);
                 const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-                return Number(view.getBigUint64(0, true));
+                const value = view.getBigUint64(0, true);
+                return value.toNumber();
             };
             const length = uint64(this._stream);
             this._stream.skip(4); // masked crc of length

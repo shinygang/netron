@@ -311,7 +311,7 @@ om.TensorType = class {
 om.TensorShape = class {
 
     constructor(dimensions) {
-        this.dimensions = dimensions.map((dim) => typeof dim === 'bigint' ? Number(dim) : dim);
+        this.dimensions = dimensions.map((dim) => typeof dim === 'bigint' ? dim.toNumber() : dim);
     }
 
     equals(obj) {
@@ -360,7 +360,7 @@ om.Container = class {
     async read() {
         if (this.context) {
             const stream = this.context.stream;
-            const reader = new base.BinaryReader(stream);
+            const reader = base.BinaryReader.open(stream);
             reader.skip(4);
             switch (this.signature) {
                 case 'IMOD': {
@@ -432,7 +432,7 @@ om.Container = class {
                             case 5: { // DEVICE_CONFIG, SO_BINS
                                 this.devices = new Map();
                                 const decoder = new TextDecoder('ascii');
-                                const reader = new base.BinaryReader(buffer);
+                                const reader = base.BinaryReader.open(buffer);
                                 reader.uint32();
                                 for (let position = 4; position < partition.size;) {
                                     const length = reader.uint32();
@@ -536,7 +536,7 @@ om.Error = class extends Error {
 svp.ModelDef = class ModelDef {
 
     constructor(buffer) {
-        const reader = new svp.BinaryReader(buffer);
+        const reader = new svp.BufferReader(buffer);
         this.attr = {};
         this.graph = [];
         this.name = reader.find(0x800D, 'string');
@@ -622,10 +622,10 @@ svp.GraphDef = class {
         this.output = [];
         this.op = [];
         this.attr = {};
-        const reader = new svp.BinaryReader(buffer);
+        const reader = new svp.BufferReader(buffer);
         const input = (buffer) => {
             const input = {};
-            const reader = new svp.BinaryReader(buffer);
+            const reader = new svp.BufferReader(buffer);
             while (reader.position < reader.length) {
                 const tag = reader.uint16();
                 switch (tag & 0x1fff) {
@@ -639,7 +639,7 @@ svp.GraphDef = class {
         };
         const output = (buffer) => {
             const output = {};
-            const reader = new svp.BinaryReader(buffer);
+            const reader = new svp.BufferReader(buffer);
             while (reader.position < reader.length) {
                 const tag = reader.uint16();
                 switch (tag & 0x1fff) {
@@ -674,7 +674,7 @@ svp.OpDef = class {
         this.output_i = [];
         this.input_desc = [];
         this.output_desc = [];
-        const reader = new svp.BinaryReader(buffer);
+        const reader = new svp.BufferReader(buffer);
         while (reader.position < reader.length) {
             const tag = reader.uint16();
             switch (tag & 0x1fff) {
@@ -733,7 +733,7 @@ svp.AttrDef = class {
     }
 };
 
-svp.BinaryReader = class extends base.BinaryReader {
+svp.BufferReader = class extends base.BufferReader {
 
     value(tag, type) {
         let value;
@@ -770,13 +770,13 @@ svp.BinaryReader = class extends base.BinaryReader {
         switch (type) {
             case 'string': {
                 if (value instanceof Uint8Array) {
-                    svp.BinaryReader._decoder = svp.BinaryReader._decoder || new TextDecoder('utf-8');
-                    return svp.BinaryReader._decoder.decode(value).replace(/\0.*$/g, '');
+                    svp.BufferReader._decoder = svp.BufferReader._decoder || new TextDecoder('utf-8');
+                    return svp.BufferReader._decoder.decode(value).replace(/\0.*$/g, '');
                 }
                 throw new om.Error(`Invalid 'string' tag '${tag.toString(16)}'.`);
             }
             case 'uint32[]': {
-                const reader = new base.BinaryReader(value);
+                const reader = base.BinaryReader.open(value);
                 value = [];
                 while (reader.position < reader.length) {
                     value.push(reader.uint32());
